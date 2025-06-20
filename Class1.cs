@@ -5,6 +5,7 @@ using System.DirectoryServices.Protocols;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.IO;
@@ -24,8 +25,32 @@ class Program
 
         string domainController = domainName;
 
+        Console.Write("Enter comma separated AD groups to include (leave blank for all computers): ");
+        var includeInput = Console.ReadLine().Trim();
+        var includeGroups = string.IsNullOrWhiteSpace(includeInput)
+            ? new List<string>()
+            : includeInput.Split(',').Select(g => g.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToList();
+
+        Console.Write("Enter comma separated AD groups to exclude (leave blank for none): ");
+        var excludeInput = Console.ReadLine().Trim();
+        var excludeGroups = string.IsNullOrWhiteSpace(excludeInput)
+            ? new List<string>()
+            : excludeInput.Split(',').Select(g => g.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToList();
+
+        NetworkCredential credential = null;
+        Console.Write("Use different credentials to query AD? (y/N): ");
+        var credAnswer = Console.ReadLine().Trim();
+        if (credAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Write("Enter username: ");
+            var user = Console.ReadLine().Trim();
+            Console.Write("Enter password: ");
+            var pass = Console.ReadLine();
+            credential = new NetworkCredential(user, pass);
+        }
+
         Console.WriteLine("[INFO] Querying Active Directory...");
-        var adDevices = GetActiveDirectoryDevices(domainController, domainName);
+        var adDevices = GetActiveDirectoryDevices(domainController, domainName, credential, includeGroups, excludeGroups);
 
         Console.WriteLine($"[INFO] Found {adDevices.Count} devices in Active Directory:");
         foreach (var dev in adDevices)
@@ -109,40 +134,55 @@ class Program
         }
     }
 
-    static List<string> GetActiveDirectoryDevices(string dc, string domainName)
+    static List<string> GetActiveDirectoryDevices(
+        string dc,
+        string domainName,
+        NetworkCredential credential,
+        List<string> includeGroups,
+        List<string> excludeGroups)
     {
-        var devices = new List<string>();
+        var devices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
             long fileTimeThreshold = DateTime.UtcNow.AddDays(-30).ToFileTimeUtc();
-            string filter = $"(&(objectClass=computer)(lastLogonTimestamp>={fileTimeThreshold}))";
             string searchBase = string.Join(",", domainName.Split('.').Select(part => $"DC={part}"));
-
-            Console.WriteLine($"[DEBUG] Using LDAP search base: {searchBase}");
-            Console.WriteLine($"[DEBUG] LDAP Filter: {filter}");
 
             using (var ldapConnection = new LdapConnection(new LdapDirectoryIdentifier(dc)))
             {
                 ldapConnection.AuthType = AuthType.Negotiate;
                 ldapConnection.SessionOptions.ProtocolVersion = 3;
-
-                var searchRequest = new SearchRequest(
-                    searchBase,
-                    filter,
-                    SearchScope.Subtree,
-                    new[] { "dNSHostName" }
-                );
-
-                var searchResponse = (SearchResponse)ldapConnection.SendRequest(searchRequest);
-
-                foreach (SearchResultEntry entry in searchResponse.Entries)
+                if (credential != null)
                 {
-                    if (entry.Attributes.Contains("dNSHostName"))
+                    ldapConnection.Credential = credential;
+                }
+
+                if (includeGroups != null && includeGroups.Count > 0)
+                {
+                    foreach (var group in includeGroups)
                     {
-                        var fullName = entry.Attributes["dNSHostName"][0].ToString();
-                        var name = fullName.Split('.')[0]; // Trim to NetBIOS
+                        foreach (var name in GetGroupMembers(ldapConnection, searchBase, group, fileTimeThreshold))
+                        {
+                            devices.Add(name);
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var name in QueryAllComputers(ldapConnection, searchBase, fileTimeThreshold))
+                    {
                         devices.Add(name);
+                    }
+                }
+
+                if (excludeGroups != null && excludeGroups.Count > 0)
+                {
+                    foreach (var group in excludeGroups)
+                    {
+                        foreach (var name in GetGroupMembers(ldapConnection, searchBase, group, fileTimeThreshold))
+                        {
+                            devices.Remove(name);
+                        }
                     }
                 }
 
@@ -158,6 +198,64 @@ class Program
         }
 
         return devices;
+    }
+
+    static IEnumerable<string> QueryAllComputers(LdapConnection connection, string searchBase, long threshold)
+    {
+        var list = new List<string>();
+        string filter = $"(&(objectClass=computer)(lastLogonTimestamp>={threshold}))";
+        Console.WriteLine($"[DEBUG] Using LDAP search base: {searchBase}");
+        Console.WriteLine($"[DEBUG] LDAP Filter: {filter}");
+        var searchRequest = new SearchRequest(searchBase, filter, SearchScope.Subtree, new[] { "dNSHostName" });
+        var searchResponse = (SearchResponse)connection.SendRequest(searchRequest);
+        foreach (SearchResultEntry entry in searchResponse.Entries)
+        {
+            if (entry.Attributes.Contains("dNSHostName"))
+            {
+                var fullName = entry.Attributes["dNSHostName"][0].ToString();
+                var name = fullName.Split('.')[0];
+                list.Add(name);
+            }
+        }
+        return list;
+    }
+
+    static IEnumerable<string> GetGroupMembers(LdapConnection connection, string searchBase, string groupName, long threshold)
+    {
+        var list = new List<string>();
+        try
+        {
+            string groupFilter = $"(&(objectClass=group)(cn={groupName}))";
+            var groupRequest = new SearchRequest(searchBase, groupFilter, SearchScope.Subtree);
+            var groupResponse = (SearchResponse)connection.SendRequest(groupRequest);
+            if (groupResponse.Entries.Count == 0)
+            {
+                Console.WriteLine($"[WARN] Group '{groupName}' not found.");
+                return list;
+            }
+
+            foreach (SearchResultEntry grp in groupResponse.Entries)
+            {
+                string groupDn = grp.DistinguishedName;
+                string compFilter = $"(&(objectClass=computer)(memberOf={groupDn})(lastLogonTimestamp>={threshold}))";
+                var compRequest = new SearchRequest(searchBase, compFilter, SearchScope.Subtree, new[] { "dNSHostName" });
+                var compResponse = (SearchResponse)connection.SendRequest(compRequest);
+                foreach (SearchResultEntry entry in compResponse.Entries)
+                {
+                    if (entry.Attributes.Contains("dNSHostName"))
+                    {
+                        var fullName = entry.Attributes["dNSHostName"][0].ToString();
+                        var name = fullName.Split('.')[0];
+                        list.Add(name);
+                    }
+                }
+            }
+        }
+        catch (LdapException ldapEx)
+        {
+            Console.WriteLine($"[ERROR] LDAP Exception while getting group '{groupName}': {ldapEx.Message}");
+        }
+        return list;
     }
 
     static async Task<List<string>> GetSentinelOneDevicesAsync(string baseDomain, string apiToken)
