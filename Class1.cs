@@ -134,7 +134,7 @@ class Program
         }
     }
 
-    static List<string> GetActiveDirectoryDevices(
+    static HashSet<string> GetActiveDirectoryDevices(
         string dc,
         string domainName,
         NetworkCredential credential,
@@ -319,3 +319,4 @@ class Program
         return list;
     }
 }
+
