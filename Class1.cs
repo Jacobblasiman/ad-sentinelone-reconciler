@@ -2,23 +2,99 @@
 using System.Collections.Generic;
 using System.DirectoryServices.ActiveDirectory;
 using System.DirectoryServices.Protocols;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.IO;
 
 class Program
 {
+    public sealed record S1CredentialsRecord(
+        int Version,
+        string Scope,
+        string EntropyHint,
+        string EncryptedDomainBase64,
+        string EncryptedTokenBase64
+    );
+
     static async Task Main()
     {
-        Console.Write("Enter SentinelOne tenant domain (e.g. yourtenant.sentinelone.net): ");
-        string sentinelOneDomain = Console.ReadLine().Trim();
+        //Set path
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "S1CLIData",
+            "s1-credentials.json"
+        );
+        //check if creds exist and prompt to save if not
+        if (!File.Exists(path))
+        {
+            Console.Write("Enter SentinelOne tenant domain (e.g. yourtenant.sentinelone.net): ");
+            string sentinelOneDomain = Console.ReadLine().Trim();
 
-        Console.Write("Enter SentinelOne API Token: ");
-        string sentinelOneApiToken = Console.ReadLine().Trim();
+            Console.Write("Enter SentinelOne API Token: ");
+            string sentinelOneApiToken = Console.ReadLine().Trim();
+
+            //Prompt to save data to dpapi
+            Console.Write("Save URL and API Token? (y/N): ");
+            var saveDataAnswer = Console.ReadLine().Trim();
+            if (saveDataAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Write("Provide PW for Encryption: ");
+                var entropypw = Console.ReadLine();
+                byte[] domainBytes = Encoding.UTF8.GetBytes(sentinelOneDomain);
+                byte[] tokenBytes = Encoding.UTF8.GetBytes(sentinelOneApiToken);
+                byte[] saveentropy = Encoding.UTF8.GetBytes(entropypw);
+
+                byte[] saveencryptedDomain = ProtectedData.Protect(domainBytes, saveentropy, DataProtectionScope.CurrentUser);
+                byte[] saveencryptedToken = ProtectedData.Protect(tokenBytes, saveentropy, DataProtectionScope.CurrentUser);
+
+                var newrecord = new S1CredentialsRecord(
+                    Version: 1,
+                    Scope: "CurrentUser",
+                    EntropyHint: Environment.MachineName,
+                    EncryptedDomainBase64: Convert.ToBase64String(saveencryptedDomain),
+                    EncryptedTokenBase64: Convert.ToBase64String(saveencryptedToken)
+                );
+
+                var savejson = JsonSerializer.Serialize(newrecord, new JsonSerializerOptions { WriteIndented = true });
+
+                var savepath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "S1CLIData",
+                    "s1-credentials.json"
+                );
+                Directory.CreateDirectory(Path.GetDirectoryName(savepath)!);
+                File.WriteAllText(savepath, savejson);
+
+                Console.WriteLine($"Saved credentials to: {path}");
+            }
+        }
+
+        var json = File.ReadAllText(path);
+        var record = JsonSerializer.Deserialize<S1CredentialsRecord>(json)
+                     ?? throw new InvalidOperationException("Credential file was invalid.");
+        Console.Write("Provide PW for Encryption: ");
+        var entropy = Encoding.UTF8.GetBytes(Console.ReadLine());
+
+        byte[] encryptedDomain = Convert.FromBase64String(record.EncryptedDomainBase64);
+        byte[] encryptedToken = Convert.FromBase64String(record.EncryptedTokenBase64);
+
+        string domain = Encoding.UTF8.GetString(
+            ProtectedData.Unprotect(encryptedDomain, entropy, DataProtectionScope.CurrentUser)
+        );
+
+        string token = Encoding.UTF8.GetString(
+            ProtectedData.Unprotect(encryptedToken, entropy, DataProtectionScope.CurrentUser)
+        );
+
+        
+
+
 
         string domainName = Domain.GetCurrentDomain().Name;
         Console.WriteLine($"[INFO] Detected domain: {domainName}");
@@ -59,7 +135,7 @@ class Program
         }
 
         Console.WriteLine("[INFO] Querying SentinelOne...");
-        var s1Devices = await GetSentinelOneDevicesAsync(sentinelOneDomain, sentinelOneApiToken);
+        var s1Devices = await GetSentinelOneDevicesAsync(domain, token);
 
         Console.WriteLine($"[INFO] Found {s1Devices.Count} devices in SentinelOne:");
         foreach (var dev in s1Devices)
@@ -134,7 +210,7 @@ class Program
         }
     }
 
-    static List<string> GetActiveDirectoryDevices(
+    static HashSet<string> GetActiveDirectoryDevices(
         string dc,
         string domainName,
         NetworkCredential credential,

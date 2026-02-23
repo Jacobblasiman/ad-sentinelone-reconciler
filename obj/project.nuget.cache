@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "sShVEV9qhm0=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\jacob.blasiman\\source\\repos\\ad-sentinelone-reconciler\\S1 AD Sync Check.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\jacob.blasiman\\.nuget\\packages\\system.directoryservices\\10.0.3\\system.directoryservices.10.0.3.nupkg.sha512",
+    "C:\\Users\\jacob.blasiman\\.nuget\\packages\\system.directoryservices.protocols\\10.0.3\\system.directoryservices.protocols.10.0.3.nupkg.sha512",
+    "C:\\Users\\jacob.blasiman\\.nuget\\packages\\system.security.cryptography.protecteddata\\10.0.3\\system.security.cryptography.protecteddata.10.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

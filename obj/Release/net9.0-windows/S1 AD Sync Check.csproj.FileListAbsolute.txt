@@ -1,0 +1,6 @@
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.csproj.AssemblyReference.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.AssemblyInfoInputs.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.AssemblyInfo.cs
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.csproj.CoreCompileInputs.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Release\net9.0-windows\S1 AD Sync Check.sourcelink.json

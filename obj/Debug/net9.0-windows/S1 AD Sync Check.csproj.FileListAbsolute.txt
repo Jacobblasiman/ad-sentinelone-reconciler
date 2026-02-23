@@ -1,0 +1,24 @@
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\S1 AD Sync Check.exe
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\S1 AD Sync Check.deps.json
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\S1 AD Sync Check.runtimeconfig.json
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\S1 AD Sync Check.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\S1 AD Sync Check.pdb
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\System.DirectoryServices.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\System.DirectoryServices.Protocols.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\runtimes\win\lib\net9.0\System.DirectoryServices.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\runtimes\linux\lib\net9.0\System.DirectoryServices.Protocols.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\runtimes\osx\lib\net9.0\System.DirectoryServices.Protocols.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\runtimes\win\lib\net9.0\System.DirectoryServices.Protocols.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.csproj.AssemblyReference.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.AssemblyInfoInputs.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.AssemblyInfo.cs
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.csproj.CoreCompileInputs.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.sourcelink.json
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sy.E74237F3.Up2Date
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\refint\S1 AD Sync Check.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.pdb
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\S1 AD Sync Check.genruntimeconfig.cache
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\obj\Debug\net9.0-windows\ref\S1 AD Sync Check.dll
+C:\Users\jacob.blasiman\source\repos\ad-sentinelone-reconciler\bin\Debug\net9.0-windows\System.Security.Cryptography.ProtectedData.dll
