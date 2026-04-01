@@ -288,21 +288,23 @@ class Program
         }
     }
 
-    static bool IsDomainControllerReachable(string dc, int port = 389, int timeoutMs = 3000)
+    static bool IsDomainControllerReachable(string dc, int port = 389, int timeoutMs = 5000)
     {
         try
         {
             using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
             using var tcp = new System.Net.Sockets.TcpClient();
-            tcp.ConnectAsync(dc, port).Wait(cts.Token);
+            tcp.ConnectAsync(dc, port, cts.Token).GetAwaiter().GetResult();
             return tcp.Connected;
         }
         catch (OperationCanceledException)
         {
+            Console.WriteLine($"[DEBUG] TCP connection to {dc}:{port} timed out after {timeoutMs}ms.");
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[DEBUG] TCP connection to {dc}:{port} failed: {ex.GetBaseException().Message}");
             return false;
         }
     }
