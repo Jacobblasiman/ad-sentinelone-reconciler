@@ -124,10 +124,14 @@ class Program
             credential = new NetworkCredential(user, pass);
         }
 
-        Console.WriteLine($"[INFO] Verifying domain controller reachability: {domainController}...");
-        if (!IsDomainControllerReachable(domainController))
+        Console.Write("Use LDAPS (SSL)? (y/N): ");
+        bool useSsl = (Console.ReadLine() ?? "").Trim().Equals("y", StringComparison.OrdinalIgnoreCase);
+        int ldapPort = useSsl ? 636 : 389;
+
+        Console.WriteLine($"[INFO] Verifying domain controller reachability: {domainController} on port {ldapPort}...");
+        if (!IsDomainControllerReachable(domainController, ldapPort))
         {
-            Console.WriteLine($"[ERROR] Domain controller '{domainController}' is not reachable on port 389 (LDAP).");
+            Console.WriteLine($"[ERROR] Domain controller '{domainController}' is not reachable on port {ldapPort}.");
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
             return;
@@ -135,7 +139,7 @@ class Program
         Console.WriteLine("[INFO] Domain controller is reachable.");
 
         Console.WriteLine("[INFO] Querying Active Directory...");
-        var (adDevices, adQuerySuccess) = GetActiveDirectoryDevices(domainController, domainName, credential, includeGroups, excludeGroups);
+        var (adDevices, adQuerySuccess) = GetActiveDirectoryDevices(domainController, domainName, credential, includeGroups, excludeGroups, useSsl);
 
         if (!adQuerySuccess)
         {
@@ -326,7 +330,8 @@ class Program
         string domainName,
         NetworkCredential credential,
         List<string> includeGroups,
-        List<string> excludeGroups)
+        List<string> excludeGroups,
+        bool useSsl = false)
     {
         var devices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool success = true;
@@ -335,11 +340,16 @@ class Program
         {
             long fileTimeThreshold = DateTime.UtcNow.AddDays(-30).ToFileTimeUtc();
             string searchBase = string.Join(",", domainName.Split('.').Select(part => $"DC={part}"));
+            int port = useSsl ? 636 : 389;
 
-            using (var ldapConnection = new LdapConnection(new LdapDirectoryIdentifier(dc)))
+            using (var ldapConnection = new LdapConnection(new LdapDirectoryIdentifier(dc, port)))
             {
                 ldapConnection.AuthType = AuthType.Negotiate;
                 ldapConnection.SessionOptions.ProtocolVersion = 3;
+                if (useSsl)
+                {
+                    ldapConnection.SessionOptions.SecureSocketLayer = true;
+                }
                 if (credential != null)
                 {
                     ldapConnection.Credential = credential;
