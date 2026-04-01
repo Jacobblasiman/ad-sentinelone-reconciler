@@ -288,23 +288,31 @@ class Program
         }
     }
 
-    static bool IsDomainControllerReachable(string dc, int port = 389, int timeoutMs = 5000)
+    static bool IsDomainControllerReachable(string dc, int port = 389, int timeoutMs = 10000)
     {
         try
         {
-            using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
-            using var tcp = new System.Net.Sockets.TcpClient();
-            tcp.ConnectAsync(dc, port, cts.Token).GetAwaiter().GetResult();
-            return tcp.Connected;
+            bool useSsl = port == 636;
+            var identifier = new LdapDirectoryIdentifier(dc, port);
+            using var connection = new LdapConnection(identifier);
+            connection.AuthType = AuthType.Negotiate;
+            connection.SessionOptions.ProtocolVersion = 3;
+            connection.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+            if (useSsl)
+            {
+                connection.SessionOptions.SecureSocketLayer = true;
+            }
+            connection.Bind();
+            return true;
         }
-        catch (OperationCanceledException)
+        catch (LdapException ldapEx)
         {
-            Console.WriteLine($"[DEBUG] TCP connection to {dc}:{port} timed out after {timeoutMs}ms.");
+            Console.WriteLine($"[DEBUG] LDAP reachability check failed for {dc}:{port} — {ldapEx.Message}");
             return false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DEBUG] TCP connection to {dc}:{port} failed: {ex.GetBaseException().Message}");
+            Console.WriteLine($"[DEBUG] Reachability check failed for {dc}:{port} — {ex.GetBaseException().Message}");
             return false;
         }
     }
