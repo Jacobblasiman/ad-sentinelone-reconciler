@@ -61,10 +61,22 @@ class Program
 
         if (File.Exists(CredentialPath))
         {
-            // Load and decrypt existing credentials
-            (domain, token) = LoadCredentials();
+            Console.WriteLine($"[INFO] Found saved credentials: {CredentialPath}");
+            Console.Write("Enter decryption password (or type 'reset' to wipe saved credentials): ");
+            string pwInput = (Console.ReadLine() ?? "").Trim();
+
+            if (pwInput.Equals("reset", StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(CredentialPath);
+                Console.WriteLine("[INFO] Stored credentials deleted.");
+            }
+            else
+            {
+                (domain, token) = DecryptCredentials(pwInput);
+                goto credentialsReady;
+            }
         }
-        else
+
         {
             // Prompt for credentials
             string inputDomain = PromptRequired("Enter SentinelOne tenant domain (e.g. yourtenant.sentinelone.net): ");
@@ -84,6 +96,7 @@ class Program
             token = inputToken;
         }
 
+        credentialsReady:
         string domainName = Domain.GetCurrentDomain().Name;
         Console.WriteLine($"[INFO] Detected domain: {domainName}");
 
@@ -225,14 +238,13 @@ class Program
         File.WriteAllText(CredentialPath, json);
     }
 
-    static (string domain, string token) LoadCredentials()
+    static (string domain, string token) DecryptCredentials(string password)
     {
         string json = File.ReadAllText(CredentialPath);
         var record = JsonSerializer.Deserialize<S1CredentialsRecord>(json)
                      ?? throw new InvalidOperationException("Credential file was empty or invalid.");
 
-        string entropyPw = PromptRequired("Provide PW for Decryption: ");
-        byte[] entropy = Encoding.UTF8.GetBytes(entropyPw);
+        byte[] entropy = Encoding.UTF8.GetBytes(password);
 
         try
         {
@@ -247,7 +259,7 @@ class Program
         catch (CryptographicException)
         {
             Console.WriteLine("[ERROR] Decryption failed — wrong password or credentials were stored on a different machine.");
-            Console.WriteLine($"[HINT] Run with --reset to clear stored credentials: {CredentialPath}");
+            Console.WriteLine("[HINT] Type 'reset' at the password prompt or run with --reset to clear stored credentials.");
             Environment.Exit(1);
             throw; // unreachable, satisfies compiler
         }
