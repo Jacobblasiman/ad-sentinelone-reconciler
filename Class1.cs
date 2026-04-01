@@ -22,79 +22,67 @@ class Program
         string EncryptedTokenBase64
     );
 
-    static async Task Main()
+    static readonly string CredentialPath = BuildCredentialPath();
+
+    static string BuildCredentialPath()
     {
-        //Set path
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "S1CLIData",
-            "s1-credentials.json"
-        );
-        //check if creds exist and prompt to save if not
-        if (!File.Exists(path))
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (string.IsNullOrEmpty(appData))
+            throw new InvalidOperationException("Could not resolve the ApplicationData folder. Ensure the environment is configured correctly.");
+        return Path.Combine(appData, "S1CLIData", "s1-credentials.json");
+    }
+
+    static async Task Main(string[] args)
+    {
+        // Handle --reset flag: delete stored credentials
+        if (args.Contains("--reset", StringComparer.OrdinalIgnoreCase))
         {
-            Console.Write("Enter SentinelOne tenant domain (e.g. yourtenant.sentinelone.net): ");
-            string sentinelOneDomain = Console.ReadLine().Trim();
-
-            Console.Write("Enter SentinelOne API Token: ");
-            string sentinelOneApiToken = Console.ReadLine().Trim();
-
-            //Prompt to save data to dpapi
-            Console.Write("Save URL and API Token? (y/N): ");
-            var saveDataAnswer = Console.ReadLine().Trim();
-            if (saveDataAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
+            if (File.Exists(CredentialPath))
             {
-                Console.Write("Provide PW for Encryption: ");
-                var entropypw = Console.ReadLine();
-                byte[] domainBytes = Encoding.UTF8.GetBytes(sentinelOneDomain);
-                byte[] tokenBytes = Encoding.UTF8.GetBytes(sentinelOneApiToken);
-                byte[] saveentropy = Encoding.UTF8.GetBytes(entropypw);
+                File.Delete(CredentialPath);
+                Console.WriteLine($"[INFO] Stored credentials deleted: {CredentialPath}");
+            }
+            else
+            {
+                Console.WriteLine("[INFO] No stored credentials found to reset.");
+            }
 
-                byte[] saveencryptedDomain = ProtectedData.Protect(domainBytes, saveentropy, DataProtectionScope.CurrentUser);
-                byte[] saveencryptedToken = ProtectedData.Protect(tokenBytes, saveentropy, DataProtectionScope.CurrentUser);
-
-                var newrecord = new S1CredentialsRecord(
-                    Version: 1,
-                    Scope: "CurrentUser",
-                    EntropyHint: Environment.MachineName,
-                    EncryptedDomainBase64: Convert.ToBase64String(saveencryptedDomain),
-                    EncryptedTokenBase64: Convert.ToBase64String(saveencryptedToken)
-                );
-
-                var savejson = JsonSerializer.Serialize(newrecord, new JsonSerializerOptions { WriteIndented = true });
-
-                var savepath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "S1CLIData",
-                    "s1-credentials.json"
-                );
-                Directory.CreateDirectory(Path.GetDirectoryName(savepath)!);
-                File.WriteAllText(savepath, savejson);
-
-                Console.WriteLine($"Saved credentials to: {path}");
+            Console.Write("Continue with new credentials? (y/N): ");
+            string continueAnswer = (Console.ReadLine() ?? "").Trim();
+            if (!continueAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("[INFO] Exiting.");
+                return;
             }
         }
 
-        var json = File.ReadAllText(path);
-        var record = JsonSerializer.Deserialize<S1CredentialsRecord>(json)
-                     ?? throw new InvalidOperationException("Credential file was invalid.");
-        Console.Write("Provide PW for Encryption: ");
-        var entropy = Encoding.UTF8.GetBytes(Console.ReadLine());
+        string domain;
+        string token;
 
-        byte[] encryptedDomain = Convert.FromBase64String(record.EncryptedDomainBase64);
-        byte[] encryptedToken = Convert.FromBase64String(record.EncryptedTokenBase64);
+        if (File.Exists(CredentialPath))
+        {
+            // Load and decrypt existing credentials
+            (domain, token) = LoadCredentials();
+        }
+        else
+        {
+            // Prompt for credentials
+            string inputDomain = PromptRequired("Enter SentinelOne tenant domain (e.g. yourtenant.sentinelone.net): ");
+            string inputToken = PromptRequired("Enter SentinelOne API Token: ");
 
-        string domain = Encoding.UTF8.GetString(
-            ProtectedData.Unprotect(encryptedDomain, entropy, DataProtectionScope.CurrentUser)
-        );
+            Console.Write("Save URL and API Token for future use? (y/N): ");
+            string saveAnswer = Console.ReadLine()?.Trim() ?? "";
 
-        string token = Encoding.UTF8.GetString(
-            ProtectedData.Unprotect(encryptedToken, entropy, DataProtectionScope.CurrentUser)
-        );
+            if (saveAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
+            {
+                string entropyPw = PromptRequired("Provide PW for Encryption: ");
+                SaveCredentials(inputDomain, inputToken, entropyPw);
+                Console.WriteLine($"[INFO] Saved credentials to: {CredentialPath}");
+            }
 
-        
-
-
+            domain = inputDomain;
+            token = inputToken;
+        }
 
         string domainName = Domain.GetCurrentDomain().Name;
         Console.WriteLine($"[INFO] Detected domain: {domainName}");
@@ -102,31 +90,44 @@ class Program
         string domainController = domainName;
 
         Console.Write("Enter comma separated AD groups to include (leave blank for all computers): ");
-        var includeInput = Console.ReadLine().Trim();
+        var includeInput = (Console.ReadLine() ?? "").Trim();
         var includeGroups = string.IsNullOrWhiteSpace(includeInput)
             ? new List<string>()
             : includeInput.Split(',').Select(g => g.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToList();
 
         Console.Write("Enter comma separated AD groups to exclude (leave blank for none): ");
-        var excludeInput = Console.ReadLine().Trim();
+        var excludeInput = (Console.ReadLine() ?? "").Trim();
         var excludeGroups = string.IsNullOrWhiteSpace(excludeInput)
             ? new List<string>()
             : excludeInput.Split(',').Select(g => g.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToList();
 
         NetworkCredential credential = null;
         Console.Write("Use different credentials to query AD? (y/N): ");
-        var credAnswer = Console.ReadLine().Trim();
+        var credAnswer = (Console.ReadLine() ?? "").Trim();
         if (credAnswer.Equals("y", StringComparison.OrdinalIgnoreCase))
         {
-            Console.Write("Enter username: ");
-            var user = Console.ReadLine().Trim();
-            Console.Write("Enter password: ");
-            var pass = Console.ReadLine();
+            var user = PromptRequired("Enter username: ");
+            var pass = PromptRequired("Enter password: ");
             credential = new NetworkCredential(user, pass);
         }
 
+        Console.WriteLine($"[INFO] Verifying domain controller reachability: {domainController}...");
+        if (!IsDomainControllerReachable(domainController))
+        {
+            Console.WriteLine($"[ERROR] Domain controller '{domainController}' is not reachable on port 389 (LDAP).");
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+            return;
+        }
+        Console.WriteLine("[INFO] Domain controller is reachable.");
+
         Console.WriteLine("[INFO] Querying Active Directory...");
-        var adDevices = GetActiveDirectoryDevices(domainController, domainName, credential, includeGroups, excludeGroups);
+        var (adDevices, adQuerySuccess) = GetActiveDirectoryDevices(domainController, domainName, credential, includeGroups, excludeGroups);
+
+        if (!adQuerySuccess)
+        {
+            Console.WriteLine("[WARN] AD query encountered errors. Results may be incomplete.");
+        }
 
         Console.WriteLine($"[INFO] Found {adDevices.Count} devices in Active Directory:");
         foreach (var dev in adDevices)
@@ -193,12 +194,73 @@ class Program
         Console.ReadKey();
     }
 
+    static string PromptRequired(string prompt)
+    {
+        while (true)
+        {
+            Console.Write(prompt);
+            string? input = Console.ReadLine()?.Trim();
+            if (!string.IsNullOrWhiteSpace(input))
+                return input;
+            Console.WriteLine("[ERROR] Input cannot be empty.");
+        }
+    }
+
+    static void SaveCredentials(string domainValue, string tokenValue, string entropyPw)
+    {
+        byte[] entropy = Encoding.UTF8.GetBytes(entropyPw);
+        byte[] encryptedDomain = ProtectedData.Protect(Encoding.UTF8.GetBytes(domainValue), entropy, DataProtectionScope.CurrentUser);
+        byte[] encryptedToken = ProtectedData.Protect(Encoding.UTF8.GetBytes(tokenValue), entropy, DataProtectionScope.CurrentUser);
+
+        var record = new S1CredentialsRecord(
+            Version: 1,
+            Scope: "CurrentUser",
+            EntropyHint: Environment.MachineName,
+            EncryptedDomainBase64: Convert.ToBase64String(encryptedDomain),
+            EncryptedTokenBase64: Convert.ToBase64String(encryptedToken)
+        );
+
+        string json = JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true });
+        Directory.CreateDirectory(Path.GetDirectoryName(CredentialPath)!);
+        File.WriteAllText(CredentialPath, json);
+    }
+
+    static (string domain, string token) LoadCredentials()
+    {
+        string json = File.ReadAllText(CredentialPath);
+        var record = JsonSerializer.Deserialize<S1CredentialsRecord>(json)
+                     ?? throw new InvalidOperationException("Credential file was empty or invalid.");
+
+        string entropyPw = PromptRequired("Provide PW for Decryption: ");
+        byte[] entropy = Encoding.UTF8.GetBytes(entropyPw);
+
+        try
+        {
+            string domain = Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(Convert.FromBase64String(record.EncryptedDomainBase64), entropy, DataProtectionScope.CurrentUser)
+            );
+            string token = Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(Convert.FromBase64String(record.EncryptedTokenBase64), entropy, DataProtectionScope.CurrentUser)
+            );
+            return (domain, token);
+        }
+        catch (CryptographicException)
+        {
+            Console.WriteLine("[ERROR] Decryption failed — wrong password or credentials were stored on a different machine.");
+            Console.WriteLine($"[HINT] Run with --reset to clear stored credentials: {CredentialPath}");
+            Environment.Exit(1);
+            throw; // unreachable, satisfies compiler
+        }
+    }
+
     static string PromptFolderPath()
     {
         while (true)
         {
-            Console.Write("Enter full path to folder where CSV should be saved: ");
-            string folderPath = Console.ReadLine().Trim();
+            Console.Write("Enter full path to folder where CSV should be saved (or 'skip' to cancel): ");
+            string folderPath = (Console.ReadLine() ?? "").Trim();
+            if (folderPath.Equals("skip", StringComparison.OrdinalIgnoreCase))
+                return "";
             if (Directory.Exists(folderPath))
             {
                 return folderPath;
@@ -210,7 +272,44 @@ class Program
         }
     }
 
-    static HashSet<string> GetActiveDirectoryDevices(
+    static bool IsDomainControllerReachable(string dc, int port = 389, int timeoutMs = 3000)
+    {
+        try
+        {
+            using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
+            using var tcp = new System.Net.Sockets.TcpClient();
+            tcp.ConnectAsync(dc, port).Wait(cts.Token);
+            return tcp.Connected;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static string LdapEscape(string input)
+    {
+        var sb = new StringBuilder(input.Length);
+        foreach (char c in input)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\5c"); break;
+                case '*':  sb.Append("\\2a"); break;
+                case '(':  sb.Append("\\28"); break;
+                case ')':  sb.Append("\\29"); break;
+                case '\0': sb.Append("\\00"); break;
+                default:   sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    static (HashSet<string> devices, bool success) GetActiveDirectoryDevices(
         string dc,
         string domainName,
         NetworkCredential credential,
@@ -218,6 +317,7 @@ class Program
         List<string> excludeGroups)
     {
         var devices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool success = true;
 
         try
         {
@@ -267,32 +367,55 @@ class Program
         catch (LdapException ldapEx)
         {
             Console.WriteLine($"[ERROR] LDAP Exception: {ldapEx.Message}");
+            success = false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[ERROR] General Exception: {ex.Message}");
+            success = false;
         }
 
-        return devices;
+        return (devices, success);
     }
 
     static IEnumerable<string> QueryAllComputers(LdapConnection connection, string searchBase, long threshold)
     {
-        var list = new List<string>();
         string filter = $"(&(objectClass=computer)(lastLogonTimestamp>={threshold}))";
         Console.WriteLine($"[DEBUG] Using LDAP search base: {searchBase}");
         Console.WriteLine($"[DEBUG] LDAP Filter: {filter}");
+        return PagedLdapSearchHostnames(connection, searchBase, filter);
+    }
+
+    static List<string> PagedLdapSearchHostnames(LdapConnection connection, string searchBase, string filter, int pageSize = 1000)
+    {
+        var list = new List<string>();
         var searchRequest = new SearchRequest(searchBase, filter, SearchScope.Subtree, new[] { "dNSHostName" });
-        var searchResponse = (SearchResponse)connection.SendRequest(searchRequest);
-        foreach (SearchResultEntry entry in searchResponse.Entries)
+        var pageControl = new PageResultRequestControl(pageSize);
+        searchRequest.Controls.Add(pageControl);
+
+        while (true)
         {
-            if (entry.Attributes.Contains("dNSHostName"))
+            var searchResponse = (SearchResponse)connection.SendRequest(searchRequest);
+            foreach (SearchResultEntry entry in searchResponse.Entries)
             {
-                var fullName = entry.Attributes["dNSHostName"][0].ToString();
-                var name = fullName.Split('.')[0];
-                list.Add(name);
+                if (entry.Attributes.Contains("dNSHostName"))
+                {
+                    var fullName = entry.Attributes["dNSHostName"][0].ToString();
+                    var name = fullName.Split('.')[0];
+                    list.Add(name);
+                }
             }
+
+            var responseControl = searchResponse.Controls
+                .OfType<PageResultResponseControl>()
+                .FirstOrDefault();
+
+            if (responseControl == null || responseControl.Cookie == null || responseControl.Cookie.Length == 0)
+                break;
+
+            pageControl.Cookie = responseControl.Cookie;
         }
+
         return list;
     }
 
@@ -301,7 +424,8 @@ class Program
         var list = new List<string>();
         try
         {
-            string groupFilter = $"(&(objectClass=group)(cn={groupName}))";
+            string safeGroupName = LdapEscape(groupName);
+            string groupFilter = $"(&(objectClass=group)(cn={safeGroupName}))";
             var groupRequest = new SearchRequest(searchBase, groupFilter, SearchScope.Subtree);
             var groupResponse = (SearchResponse)connection.SendRequest(groupRequest);
             if (groupResponse.Entries.Count == 0)
@@ -312,19 +436,9 @@ class Program
 
             foreach (SearchResultEntry grp in groupResponse.Entries)
             {
-                string groupDn = grp.DistinguishedName;
+                string groupDn = LdapEscape(grp.DistinguishedName);
                 string compFilter = $"(&(objectClass=computer)(memberOf={groupDn})(lastLogonTimestamp>={threshold}))";
-                var compRequest = new SearchRequest(searchBase, compFilter, SearchScope.Subtree, new[] { "dNSHostName" });
-                var compResponse = (SearchResponse)connection.SendRequest(compRequest);
-                foreach (SearchResultEntry entry in compResponse.Entries)
-                {
-                    if (entry.Attributes.Contains("dNSHostName"))
-                    {
-                        var fullName = entry.Attributes["dNSHostName"][0].ToString();
-                        var name = fullName.Split('.')[0];
-                        list.Add(name);
-                    }
-                }
+                list.AddRange(PagedLdapSearchHostnames(connection, searchBase, compFilter));
             }
         }
         catch (LdapException ldapEx)
@@ -337,7 +451,7 @@ class Program
     static async Task<List<string>> GetSentinelOneDevicesAsync(string baseDomain, string apiToken)
     {
         var list = new List<string>();
-        using (var client = new HttpClient())
+        using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) })
         {
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiToken", apiToken);
             string thirtyDaysAgoIso = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ssZ");
@@ -372,8 +486,12 @@ class Program
 
                 foreach (var agent in agents)
                 {
-                    var name = agent.GetProperty("computerName").GetString();
-                    list.Add(name);
+                    if (agent.TryGetProperty("computerName", out var nameProp))
+                    {
+                        string? name = nameProp.GetString();
+                        if (!string.IsNullOrEmpty(name))
+                            list.Add(name);
+                    }
                 }
 
                 if (root.TryGetProperty("pagination", out var pagination))
